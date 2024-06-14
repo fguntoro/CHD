@@ -1,0 +1,845 @@
+---
+title: Risk of CHD in South Asian population in the UK Biobank.
+subtitle: Fernando Guntoro
+date: 12 June 2024  ## update date here
+fontsize: 11pt
+linkcolor: black
+output:
+  pdf_document:
+    extra_dependencies: ["float"]
+  rmdformats::readthedown:
+    self_contained: true
+    thumbnails: false
+    number_sections: false
+    lightbox: true
+    gallery: true
+    highlight: tango
+    toc_depth: 3
+    fig_caption: true
+  pkgdown:
+    as_is:true
+css: custom.css
+
+---
+  
+  <!-- prettydoc::html_pretty: -->
+  <!--   #code_folding: none -->
+  <!--   theme: leonids -->
+  <!--   toc: true -->
+  <!--   number_sections: true -->
+  <!--   #toc_float: TRUE -->
+  <!--   toc_depth: 2 -->
+  <!--   highlight: github -->
+  <!--   #toc_float: true -->
+  <!--   fig_caption: true -->
+
+
+```{r setup, include=FALSE,}
+path<-"R:/home/Cancer/"
+knitr::opts_knit$set(root.dir = path)  # with something else than `getwd()`
+library(reticulate)
+library(dplyr)
+library(knitr)
+library(tableone)
+library(ggplot2)
+library(scales)
+library(lubridate)
+library(cowplot)
+library(cobalt)
+library(MatchIt)
+library(ggplotify)
+library(ggforestplot)
+knitr::opts_chunk$set(echo = TRUE, tidy.opts=list(width.cutoff=50, blank=TRUE),tidy=FALSE)
+knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
+```
+
+<style>
+div.lblue {background-color:#e4eaf7; border-radius: 2px; padding: 10px;}
+</style>
+
+# Abstract
+This short study was conducted to investigate the risk of CHD in the South Asian population in the UK Biobank. Using the UK Biobank cohort linked with the HES and death registry, we included CHD participants based on ICD9 and ICD10 codes in our study.
+
+We stratified our analysis by sex. We then matched ethnicity such that individuals who are South Asian are matched to a White European individual on a 1:1 ratio based on date of diagnosis, and other covariates including age, smoking status, alcohol status, education status, employment status and household income. We defined two different outcomes of interest: (1) incidence, and (2) all-cause mortality, and (3) CHD as primary cause of death. We then reported the HRs.
+
+\pagebreak
+
+```{r, include=FALSE}
+raw_data <- readRDS("./Data/ukb_merged_data_processed.rds")
+raw_data <- subset(raw_data, case_any_cancer==1)
+tmp <- raw_data %>%
+  filter((date_of_death > as.Date("2020-01-01") | is.na(date_of_death)) & 
+           date_diagnosis_baseline_any_cancer < as.Date("2020-01-01"))
+```
+
+
+# Study flowchart
+Flowchart of the UK Biobank participants from recruitment to inclusion in this study.
+```{r, echo=FALSE, warning=FALSE,out.width="70%", out.height="70%"}
+knitr::include_graphics(paste0(getwd(),"/Figures/Study flowchart.jpg"))
+```
+
+<!-- # Study timeline -->
+<!-- ```{r, echo=FALSE, warning=FALSE, fig.width=10, fig.height=10} -->
+<!-- #knitr::include_graphics(paste0(getwd(),"/Figures/incidence_line.png")) -->
+<!-- ``` -->
+
+\pagebreak
+
+# Results
+## Demographics (Table 1)
+Demographics of participants included in this analysis diagnosed with cancer, before and after matching based on COVID-19 status.
+
+```{r, include=FALSE}
+library(caret)
+icd_dict <- read.delim("./icd_dict.txt")
+col_dict <- read.csv("./column_dictionary.csv")
+
+# For any cancer case
+covars <- subset(col_dict, Include == 1 & !(Type %in% c("Metabolic","Biochemistry","CancerRegistry", "DeathRegistry")))$CodingName
+covars <- covars[which(covars != "date_recr")]
+data <- tmp[c("result", covars)]
+dummy <- dummyVars(~., data = data)
+df <- data.frame(predict(dummy, newdata=data))
+df <- df[,c(-1,-4)]
+
+contVars = df[c("age_recr", "bmi")]
+catVars <- df
+catVars[c("age_recr","bmi")] <- NULL
+
+catVars[sapply(catVars, is.numeric)] <- lapply(catVars[sapply(catVars, is.numeric)], factor, levels = c(0,1))
+final_df_full <- cbind(contVars, catVars)
+tableone <- CreateTableOne(strata = c("result.1"), data = final_df_full, testExact = "fishers.test")
+tableone
+
+table <- print(tableone)[-4,1:2]
+
+matched_data <- readRDS("./Matching/data1_any_cancer_matched.rds")
+matched_data <- matched_data[order(matched_data$subclass, matched_data$result),c("result", covars)]
+matched_data$group <- c(0,1)
+
+dummy <- dummyVars(~., data = matched_data)
+df <- data.frame(predict(dummy, newdata=matched_data))
+df <- df[,c(-1,-4)]
+
+contVars = df[c("age_recr", "bmi")]
+catVars <- df
+catVars[c("age_recr","bmi")] <- NULL
+
+catVars[sapply(catVars, is.numeric)] <- lapply(catVars[sapply(catVars, is.numeric)], factor, levels = c(0,1))
+data <- final_df <- cbind(contVars, catVars)
+catVars$result.1 <- data$group <- NULL
+
+tableone <- CreateTableOne(strata = c("result.1"), data = data)
+table <- cbind(table, print(tableone)[-4,1:2])
+
+res_out_pval <- res_out_ci <- c()
+
+group1 <- subset(df[c("age_recr", "bmi", "group")],  group == 0, 
+               select = -c(group))
+group2 <- subset(df[c("age_recr", "bmi", "group")],  group == 1,
+               select = -c(group))
+
+for (i in 1:(ncol(group1))) {
+  res <- t.test(group1[,i], group2[,i])
+  res_out_pval <- c(res_out_pval, res$p.value)
+  res_out_ci <- c(res_out_ci, paste0(round(res$conf.int,3), collapse = ", "))
+}
+
+group1 <- subset(catVars,  group == 0, 
+               select = -c(group))
+group2 <- subset(catVars,  group == 1,
+               select = -c(group))
+
+for (i in 1:(ncol(group1))) {
+  print(names(group1)[i])
+  A = cbind(table(group1[,i]), table(group2[,i]))
+  print(A)
+  res <- prop.test(A)
+  res_out_pval <- c(res_out_pval, res$p.value)
+  res_out_ci <- c(res_out_ci, paste0(round(res$conf.int,3), collapse = ", "))
+}
+names(res_out_pval) <- names(res_out_ci) <- c(colnames(contVars), colnames(group1))
+
+
+table <- cbind(table, c("", res_out_ci), c("", format(round(res_out_pval,3),3)))
+colnames(table) <- c("Full: COVID-19 -ve", "Full: COVID-19 +ve", "Matched: COVID-19 -ve", "Matched: COVID-19 +ve", "95% CI", "p-value")
+rownames(table) <- c("N", "Age (mean (SD))", "BMI (mean (SD))", "Sex = Female (%)",
+                     "Income = Lower (%)", "Income = Higher (%)", "Income = Other (%)",
+                     "Education = None (%)", "Education = A-level (%)", "Education = Other (%)", "Education = University (%)",
+                     "Employment = Unemployed (%)", "Employment = Employed (%)", "Employment = Retired (%)",
+                     "Smoking = Never (%)", "Smoking = Current (%)", "Smoking = Former (%)",
+                     "Alcohol = Never (%)", "Alcohol = Current (%)", "Alcohol = Former (%)",
+                     "Ethnicity = White (%)", "Ethnicity = Black (%)", "Ethnicity = Other (%)", "Ethnicity = South Asian (%)")
+```
+
+\tiny
+```{r, echo=FALSE, }
+kable(table)
+```
+\normalsize
+p-values and 95% confidence intervals were estimated for the matched datasets, using t-test for the continuous variables, and chi-squared test for the categorical variables based on equality of proportions.
+
+
+
+## COVID-19 and deceased status
+Table showing COVID-19 and deceased status by cancer group after matching.
+\tiny
+```{r, echo=FALSE}
+icd_dict <- read.delim("./icd_dict.txt")
+suffix <- "matched"
+df_univariate <- read.csv("./TimeWindow/univariate_results_dat1.csv")
+df <- merge(df_univariate, icd_dict, by.x="group_code", by.y="coding_name")
+df <- df %>%
+  filter(n_censor_year==0 & ratio == 1 & cause == "allcause_mortality") %>%
+  mutate(n_total = covid0_deceased0+covid1_deceased0+covid0_deceased1+covid1_deceased1) %>%
+  dplyr::select(c(figure_name, n_total, covid0_deceased0,covid0_deceased1,covid1_deceased0,covid1_deceased1))
+colnames(df) <- c("Type","Total","COVID-ve, Alive","COVID-ve, Deceased","COVID+ve, Alive","COVID+ve, Deceased" )
+kable(df)
+```
+\normalsize
+Note: totaling individual cancer subtypes do not equal to the "All cancer" total, as individuals with more than one cancer subtypes become duplicated during the concatenation. As such, these individuals were removed from the "All cancer" total prior to subsequent analyses.
+
+\pagebreak
+
+## Association of mortality with COVID-19 in cancer patients
+Figure. Odds ratio of all-cause mortality and SARS-CoV-2 infection in cancer patients from an adjusted logistic regression model. Shown are different number of years prior to COVID-19 pandemic that were censored. Results for cancer groups with under 10 deaths not shown.
+
+```{r, echo=FALSE, warning=FALSE, out.height="110%", out.width="110%"}
+df_univariate <- read.csv("./TimeWindow/univariate_results_dat1.csv")
+# df_univariate_control <- read.csv("./Control/univariate_results.csv")
+# df_univariate_control$n_censor_year <- df_univariate_control$n_total <- 0
+# df_univariate <- rbind(df_univariate, df_univariate_control)
+
+df_univariate <- merge(df_univariate, icd_dict, by.x = "group_code", by.y="coding_name")
+  
+fit <- paste0("fit", 3)
+var_cause = "allcause_mortality"
+title <- "All-cause mortality"
+col_selected <- paste0(paste0(fit, "."), c("estimate", "confint.lower", "confint.upper", "pval"))
+
+p.dat <- df_univariate %>%
+  mutate(total_deceased = covid0_deceased1 + covid1_deceased1) %>%
+  filter(n_censor_year != 2 & cause == var_cause) %>% 
+  dplyr::select(all_of(c("group_code","ratio","cause", "n_censor_year", col_selected, "Index", "figure_name", "total_deceased")))
+  
+colnames(p.dat) <- c("group_code","ratio","cause", "n_censor_year", "OR", "OR_lower", "OR_upper", "pval", "index", "label", "total_deceased")
+p.dat <- p.dat[order(p.dat$index),]
+p.dat$label <- factor(p.dat$label, levels = unique(p.dat$label))
+p.dat$n_censor_year <- factor(p.dat$n_censor_year, levels = c("20", "10", "5", "0"))
+
+p.dat$colourcode = ifelse(p.dat$pval < 0.05, "Significant", "Insignificant")
+
+# Plot
+p <- ggplot(data=p.dat, aes(y=label))+
+  geom_point(aes(x = OR, group=n_censor_year), size = 0, alpha= 0, shape = 16, position = position_dodge2(width = 0.8)) +
+  geom_linerange(data = subset(p.dat, total_deceased >= 10), aes(xmin = OR_lower, xmax =OR_upper, color = n_censor_year, group=n_censor_year), linewidth = 1, alpha = 0.5, position = position_dodge2(width = 0.8)) +
+  geom_stripes(odd = "#22222222", even = "#00000000") +
+  geom_vline(xintercept=1,linetype="dashed",col='grey') +
+  geom_point(data = subset(p.dat, total_deceased >= 10), aes(x = OR, color = n_censor_year, group=n_censor_year), shape = 16, position = position_dodge2(width = 0.8)) +
+  xlab("Odds Ratio") +
+  ylab("") +
+  ggtitle(title) +
+  theme_bw() +
+  coord_cartesian(xlim = c(NA, 10))+
+    theme(
+      axis.line.y = element_blank(),
+      panel.grid.major.x = element_blank() ,
+      panel.grid.minor.x = element_blank() ,
+      panel.grid.major.y = element_blank(),
+      plot.title = element_text(size = 10),
+      axis.text.x = element_text(size = 10)
+    ) +
+  guides(color=guide_legend(title="Year(s)")) +
+  facet_wrap(~ratio, labeller = label_both)
+print(p)
+
+ggsave(paste0("./Figures/plot_OR_all_timewindow_", var_cause, ".png"), width = 10, height = 10)
+
+```
+
+\pagebreak
+
+Figure. Odds ratio of non-COVID mortality and SARS-CoV-2 infection in cancer patients from an adjusted logistic regression model. Shown are different number of years prior to COVID-19 pandemic that were censored. Results for cancer groups with under 10 deaths not shown. Non-covid mortality was defined by deaths that were >1 month post SARS-CoV-2 infection.
+
+```{r, echo=FALSE, warning=FALSE, out.height="110%", out.width="110%"}
+fit <- paste0("fit", 3)
+var_cause = "notcovid_mortality"
+title <- "Non-COVID-19 mortality"
+col_selected <- paste0(paste0(fit, "."), c("estimate", "confint.lower", "confint.upper", "pval"))
+
+p.dat <- df_univariate %>%
+  mutate(total_deceased = covid0_deceased1 + covid1_deceased1) %>%
+  filter(n_censor_year != 2 & cause == var_cause) %>% 
+  dplyr::select(all_of(c("group_code","ratio","cause", "n_censor_year", col_selected, "Index", "figure_name", "total_deceased")))
+  
+colnames(p.dat) <- c("group_code","ratio","cause", "n_censor_year", "OR", "OR_lower", "OR_upper", "pval", "index", "label", "total_deceased")
+p.dat <- p.dat[order(p.dat$index),]
+p.dat$label <- factor(p.dat$label, levels = unique(p.dat$label))
+p.dat$n_censor_year <- factor(p.dat$n_censor_year, levels = c("20", "10", "5", "0"))
+
+p.dat$colourcode = ifelse(p.dat$pval < 0.05, "Significant", "Insignificant")
+
+# Plot
+p <- ggplot(data=p.dat, aes(y=label))+
+  geom_point(aes(x = OR, group=n_censor_year), size = 0, alpha= 0, shape = 16, position = position_dodge2(width = 0.8)) +
+  geom_linerange(data = subset(p.dat, total_deceased >= 10), aes(xmin = OR_lower, xmax =OR_upper, color = n_censor_year, group=n_censor_year), linewidth = 1, alpha = 0.5, position = position_dodge2(width = 0.8)) +
+  geom_stripes(odd = "#22222222", even = "#00000000") +
+  geom_vline(xintercept=1,linetype="dashed",col='grey') +
+  geom_point(data = subset(p.dat, total_deceased >= 10), aes(x = OR, color = n_censor_year, group=n_censor_year), shape = 16, position = position_dodge2(width = 0.8)) +
+  xlab("Odds Ratio") +
+  ylab("") +
+  ggtitle(title) +
+  theme_bw() +
+  coord_cartesian(xlim = c(NA, 10))+
+    theme(
+      axis.line.y = element_blank(),
+      panel.grid.major.x = element_blank() ,
+      panel.grid.minor.x = element_blank() ,
+      panel.grid.major.y = element_blank(),
+      plot.title = element_text(size = 10),
+      axis.text.x = element_text(size = 10)
+    ) +
+  guides(color=guide_legend(title="Year(s)")) +
+  facet_wrap(~ratio, labeller = label_both)
+print(p)
+
+ggsave(paste0("./Figures/plot_OR_all_timewindow_", var_cause, ".png"), width = 10, height = 10)
+
+```
+
+\pagebreak
+
+Figure. Odds ratio of cancer mortality and SARS-CoV-2 infection in cancer patients from an adjusted logistic regression model. Shown are different number of years prior to COVID-19 pandemic that were censored. Results for cancer groups with under 10 deaths not shown.
+
+```{r, echo=FALSE, warning=FALSE, out.height="110%", out.width="110%"}
+fit <- paste0("fit", 3)
+var_cause = "cancer_mortality"
+title <- "Cancer mortality"
+col_selected <- paste0(paste0(fit, "."), c("estimate", "confint.lower", "confint.upper", "pval"))
+
+p.dat <- df_univariate %>%
+  mutate(total_deceased = covid0_deceased1 + covid1_deceased1) %>%
+  filter(n_censor_year != 2 & cause == var_cause) %>% 
+  dplyr::select(all_of(c("group_code","ratio","cause", "n_censor_year", col_selected, "Index", "figure_name", "total_deceased")))
+  
+colnames(p.dat) <- c("group_code","ratio","cause", "n_censor_year", "OR", "OR_lower", "OR_upper", "pval", "index", "label", "total_deceased")
+p.dat <- p.dat[order(p.dat$index),]
+p.dat$label <- factor(p.dat$label, levels = unique(p.dat$label))
+p.dat$n_censor_year <- factor(p.dat$n_censor_year, levels = c("20", "10", "5", "0"))
+
+p.dat$colourcode = ifelse(p.dat$pval < 0.05, "Significant", "Insignificant")
+
+# Plot
+p <- ggplot(data=p.dat, aes(y=label))+
+  geom_point(aes(x = OR, group=n_censor_year), size = 0, alpha= 0, shape = 16, position = position_dodge2(width = 0.8)) +
+  geom_linerange(data = subset(p.dat, total_deceased >= 10), aes(xmin = OR_lower, xmax =OR_upper, color = n_censor_year, group=n_censor_year), linewidth = 1, alpha = 0.5, position = position_dodge2(width = 0.8)) +
+  geom_stripes(odd = "#22222222", even = "#00000000") +
+  geom_vline(xintercept=1,linetype="dashed",col='grey') +
+  geom_point(data = subset(p.dat, total_deceased >= 10), aes(x = OR, color = n_censor_year, group=n_censor_year), shape = 16, position = position_dodge2(width = 0.8)) +
+  xlab("Odds Ratio") +
+  ylab("") +
+  ggtitle(title) +
+  theme_bw() +
+  coord_cartesian(xlim = c(NA, 10))+
+    theme(
+      axis.line.y = element_blank(),
+      panel.grid.major.x = element_blank() ,
+      panel.grid.minor.x = element_blank() ,
+      panel.grid.major.y = element_blank(),
+      plot.title = element_text(size = 10),
+      axis.text.x = element_text(size = 10)
+    ) +
+  guides(color=guide_legend(title="Year(s)")) +
+  facet_wrap(~ratio, labeller = label_both)
+print(p)
+
+ggsave(paste0("./Figures/plot_OR_all_timewindow_", var_cause, ".png"), width = 10, height = 10)
+
+```
+
+\pagebreak
+## Sensitivity analysis based on censoring periods of COVID-19 pandemic
+Analyses of risk before three key dates to investigate the effects of vaccination during the COVID-19 pandemic. These censoring periods also correspond to greater proportion of vaccinated individuals in the population. The dates were (1) "2020-12-01" before vaccination in the UK, (2) "2021-03-01" >50% vaccinated in aged 50+ (~25% overall population) in England, (3) "2021-06-01" >90% vaccinated in aged 50+ (~50% overall population) in England. For the censoring, participants with date of testing positive after the key dates and their matched controls were not considered in the statistical analysis. Analysis was done on all cancer cases, by concatenating all cancer groups and removing any duplicated participants.
+
+```{r, include=FALSE}
+#df_covid <- read.csv("./Vaccinations/univariate_results.csv")
+df_covid <- read.csv("./Vaccinations/univariate_results_censorpostdate.csv")
+
+fit <- paste0("fit", 2)
+title <- paste0("OR based on dates during COVID-19 pandemic")
+col_selected <- paste0(paste0(fit, "."), c("estimate", "confint.lower", "confint.upper", "pval"))
+
+p.dat <- df_covid %>% dplyr::select(c("start_date", "end_date", "cause", col_selected))
+colnames(p.dat) <- c("start_date", "end_date","cause", "OR", "OR_lower", "OR_upper", "pval")
+p.dat$start_date <- as.Date(p.dat$start_date)
+p.dat$end_date <- as.Date(p.dat$end_date)
+
+p1 <- ggplot(p.dat, aes(x = end_date, y = OR, colour = cause, group = cause)) +
+  geom_line() +
+  geom_hline(yintercept=1,linetype="dashed",col='grey') +
+  geom_linerange(aes(ymin = OR_lower, ymax =OR_upper), size = 1, alpha = 0.5, position = position_dodge2(width = 20)) +
+  geom_point(aes(y = OR), shape = 15, position = position_dodge2(width = 20)) +
+  labs(colour = "Cause of death") +
+    xlab("Start date") +
+    ylab("Odds ratio") +
+    ggtitle(title) +
+    theme_bw() +
+  scale_x_date(breaks="1 month", labels=date_format("%b-%y"))+
+  coord_cartesian(ylim=c(0, NA), xlim=c(as.Date("2019-12-27"), as.Date("2022-01-16"))) +
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        #panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        )  +
+  geom_vline(xintercept = as.Date("2019-12-10")) +
+  geom_vline(xintercept = as.Date("2020-12-16"), linetype="dotted") +
+  geom_vline(xintercept = as.Date("2021-03-16"), linetype="dotted") +
+  geom_vline(xintercept = as.Date("2021-06-16"))
+
+```
+
+```{r, include=FALSE}
+plot_incidence_window <- function(summarized,start_date, end_date, start_date_colour= NULL, end_date_colour=NULL, title, timescale="Year", xlim=NULL) {
+  
+  summarized <- na.omit(summarized)
+  
+  if (timescale == "Year") {
+    offset = 183
+  } else if (timescale == "Month") {
+    offset = 15
+  }
+  
+  if (!is.null(start_date_colour) & !is.null(end_date_colour)) {
+      summarized$colour <- if_else(summarized$date >= start_date & summarized$date <= end_date,
+                                   if_else(summarized$date >= start_date_colour & summarized$date <= end_date_colour, "red", "black"),
+                                   "grey")
+  } else {
+    summarized$colour <- "grey"
+  }
+
+  
+  p <- ggplot(summarized, aes(date, value)) +
+    geom_rect(aes(ymin = 0, ymax = Inf, xmin = start_date-offset, xmax = end_date + offset), data = summarized, fill = 'lightgrey', alpha = 0.02) + 
+  geom_vline(aes(xintercept = start_date-offset), data = summarized) +
+  geom_vline(aes(xintercept = end_date + offset), data = summarized) +
+  geom_bar(aes(fill = colour), position="stack", stat="identity") +
+  labs(subtitle = title) +
+  ylab("Frequency") + 
+  scale_fill_identity()+
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        #axis.line.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        #panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()
+        )
+  
+  if (is.null(xlim)) {
+      if (timescale == "Year") {
+        p <- p + scale_x_date(breaks="1 year", labels=date_format("%Y")) +
+          xlab("Year")
+      } else if (timescale == "Month") {
+        p <- p + scale_x_date(breaks="1 month", labels=date_format("%b-%Y")) +
+          xlab("Month")
+      }
+  } else {
+      
+    p <-  p+
+      xlim(as.Date(xlim, format="%Y-%m-%d"))
+  }
+
+
+return(p)
+}
+
+tmp.dat <- subset(raw_data, case_any_cancer == 1)
+
+tmp.dat <- tmp.dat %>%
+  dplyr::select(all_of("specdate"),"deceased", "result")
+
+colnames(tmp.dat) <- c("date","deceased", "result")
+
+summarized_covid <- tmp.dat %>%
+  mutate(date = floor_date(date, unit = 'month')) %>% 
+  group_by(date) %>% 
+  summarise(value = n()) %>% 
+  ungroup()
+
+p2 <- plot_incidence_window(na.omit(summarized_covid),
+                            as.Date("2020-01-01"), as.Date("2022-01-01"),
+                            as.Date("2020-01-01"), as.Date("2021-06-01"),
+                            title="COVID-19 incidence", timescale = "Month")
+p2 <- p2 +
+  geom_vline(xintercept = as.Date("2020-12-16"), linetype="dotted") +
+  geom_vline(xintercept = as.Date("2021-03-16"), linetype="dotted") +
+  geom_vline(xintercept = as.Date("2021-06-16"))
+
+```
+
+```{r, echo=FALSE, out.height="110%", out.width="110%"}
+p1.leg <- as.ggplot(get_legend(p1))
+p1.fin <- p1 +
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank())
+p2.fin <- p2
+
+gridded <- plot_grid(p1.fin, p2.fin, ncol = 1, rel_heights = c(0.8, 0.5))
+plot_grid(gridded, p1.leg, ncol = 2, rel_widths = c(1.2, 0.4))
+```
+* As the risk of all-cause mortality decreases with censoring earlier waves, the risk of death by cancer and non-covid mortality increases. In fact, the risk non-covid death was significant considering the cases in the third wave with OR of 1.36 and 95% CI 1.10 to 1.68.
+
+\pagebreak
+
+Table showing the numbers for each group in the figure from the previous page.
+```{r, echo=FALSE}
+tab <- df_covid[,c(4,2:3, 5:9)]
+colnames(tab) <- c("Cause","Start date","End date", "Total", "COVID-ve, Alive", "COVID-ve, Deceased", "COVID+ve, Alive", "COVID+ve, Deceased")
+kable(tab)
+```
+
+\pagebreak
+
+## Association of mortality with COVID-19 in cancer patients (Using the cut off date based on unvaccinated period, i.e. pre-"2020-01-12")
+Figure. Odds ratio of all-cause mortality and SARS-CoV-2 infection in cancer patients from an adjusted logistic regression model. Shown are different number of years prior to COVID-19 pandemic that were censored. Results for cancer groups with under 10 deaths not shown.
+
+```{r, echo=FALSE, warning=FALSE, out.height="110%", out.width="110%"}
+df_univariate <- read.csv("./TimeWindow/univariate_results_dat1_end2020-12-01.csv")
+
+df_univariate <- merge(df_univariate, icd_dict, by.x = "group_code", by.y="coding_name")
+  
+fit <- paste0("fit", 3)
+var_cause = "allcause_mortality"
+title <- "All-cause mortality"
+col_selected <- paste0(paste0(fit, "."), c("estimate", "confint.lower", "confint.upper", "pval"))
+
+p.dat <- df_univariate %>%
+  mutate(total_deceased = covid0_deceased1 + covid1_deceased1) %>%
+  filter(n_censor_year != 2 & cause == var_cause) %>% 
+  dplyr::select(all_of(c("group_code","ratio","cause", "n_censor_year", col_selected, "Index", "figure_name", "total_deceased")))
+  
+colnames(p.dat) <- c("group_code","ratio","cause", "n_censor_year", "OR", "OR_lower", "OR_upper", "pval", "index", "label", "total_deceased")
+p.dat <- p.dat[order(p.dat$index),]
+p.dat$label <- factor(p.dat$label, levels = unique(p.dat$label))
+p.dat$n_censor_year <- factor(p.dat$n_censor_year, levels = c("20", "10", "5", "0"))
+
+p.dat$colourcode = ifelse(p.dat$pval < 0.05, "Significant", "Insignificant")
+
+# Plot
+p <- ggplot(data=p.dat, aes(y=label))+
+  geom_point(aes(x = OR, group=n_censor_year), size = 0, alpha= 0, shape = 16, position = position_dodge2(width = 0.8)) +
+  geom_linerange(data = subset(p.dat, total_deceased >= 10), aes(xmin = OR_lower, xmax =OR_upper, color = n_censor_year, group=n_censor_year), linewidth = 1, alpha = 0.5, position = position_dodge2(width = 0.8)) +
+  geom_stripes(odd = "#22222222", even = "#00000000") +
+  geom_vline(xintercept=1,linetype="dashed",col='grey') +
+  geom_point(data = subset(p.dat, total_deceased >= 10), aes(x = OR, color = n_censor_year, group=n_censor_year), shape = 16, position = position_dodge2(width = 0.8)) +
+  xlab("Odds Ratio") +
+  ylab("") +
+  ggtitle(title) +
+  theme_bw() +
+  coord_cartesian(xlim = c(NA, 10))+
+    theme(
+      axis.line.y = element_blank(),
+      panel.grid.major.x = element_blank() ,
+      panel.grid.minor.x = element_blank() ,
+      panel.grid.major.y = element_blank(),
+      plot.title = element_text(size = 10),
+      axis.text.x = element_text(size = 10)
+    ) +
+  guides(color=guide_legend(title="Year(s)")) +
+  facet_wrap(~ratio, labeller = label_both)
+print(p)
+
+ggsave(paste0("./Figures/plot_OR_all_timewindow_", var_cause, ".png"), width = 10, height = 10)
+
+```
+
+\pagebreak
+
+Figure. Odds ratio of non-COVID mortality and SARS-CoV-2 infection in cancer patients from an adjusted logistic regression model. Shown are different number of years prior to COVID-19 pandemic that were censored. Results for cancer groups with under 10 deaths not shown. Non-covid mortality was defined by deaths that were >1 month post SARS-CoV-2 infection.
+
+```{r, echo=FALSE, warning=FALSE, out.height="110%", out.width="110%"}
+fit <- paste0("fit", 3)
+var_cause = "notcovid_mortality"
+title <- "Non-COVID-19 mortality"
+col_selected <- paste0(paste0(fit, "."), c("estimate", "confint.lower", "confint.upper", "pval"))
+
+p.dat <- df_univariate %>%
+  mutate(total_deceased = covid0_deceased1 + covid1_deceased1) %>%
+  filter(n_censor_year != 2 & cause == var_cause) %>% 
+  dplyr::select(all_of(c("group_code","ratio","cause", "n_censor_year", col_selected, "Index", "figure_name", "total_deceased")))
+  
+colnames(p.dat) <- c("group_code","ratio","cause", "n_censor_year", "OR", "OR_lower", "OR_upper", "pval", "index", "label", "total_deceased")
+p.dat <- p.dat[order(p.dat$index),]
+p.dat$label <- factor(p.dat$label, levels = unique(p.dat$label))
+p.dat$n_censor_year <- factor(p.dat$n_censor_year, levels = c("20", "10", "5", "0"))
+
+p.dat$colourcode = ifelse(p.dat$pval < 0.05, "Significant", "Insignificant")
+
+# Plot
+p <- ggplot(data=p.dat, aes(y=label))+
+  geom_point(aes(x = OR, group=n_censor_year), size = 0, alpha= 0, shape = 16, position = position_dodge2(width = 0.8)) +
+  geom_linerange(data = subset(p.dat, total_deceased >= 10), aes(xmin = OR_lower, xmax =OR_upper, color = n_censor_year, group=n_censor_year), linewidth = 1, alpha = 0.5, position = position_dodge2(width = 0.8)) +
+  geom_stripes(odd = "#22222222", even = "#00000000") +
+  geom_vline(xintercept=1,linetype="dashed",col='grey') +
+  geom_point(data = subset(p.dat, total_deceased >= 10), aes(x = OR, color = n_censor_year, group=n_censor_year), shape = 16, position = position_dodge2(width = 0.8)) +
+  xlab("Odds Ratio") +
+  ylab("") +
+  ggtitle(title) +
+  theme_bw() +
+  coord_cartesian(xlim = c(NA, 10))+
+    theme(
+      axis.line.y = element_blank(),
+      panel.grid.major.x = element_blank() ,
+      panel.grid.minor.x = element_blank() ,
+      panel.grid.major.y = element_blank(),
+      plot.title = element_text(size = 10),
+      axis.text.x = element_text(size = 10)
+    ) +
+  guides(color=guide_legend(title="Year(s)")) +
+  facet_wrap(~ratio, labeller = label_both)
+print(p)
+
+ggsave(paste0("./Figures/plot_OR_all_timewindow_", var_cause, ".png"), width = 10, height = 10)
+
+```
+
+\pagebreak
+
+Figure. Odds ratio of cancer mortality and SARS-CoV-2 infection in cancer patients from an adjusted logistic regression model. Shown are different number of years prior to COVID-19 pandemic that were censored. Results for cancer groups with under 10 deaths not shown.
+
+```{r, echo=FALSE, warning=FALSE, out.height="110%", out.width="110%"}
+fit <- paste0("fit", 3)
+var_cause = "cancer_mortality"
+title <- "Cancer mortality"
+col_selected <- paste0(paste0(fit, "."), c("estimate", "confint.lower", "confint.upper", "pval"))
+
+p.dat <- df_univariate %>%
+  mutate(total_deceased = covid0_deceased1 + covid1_deceased1) %>%
+  filter(n_censor_year != 2 & cause == var_cause) %>% 
+  dplyr::select(all_of(c("group_code","ratio","cause", "n_censor_year", col_selected, "Index", "figure_name", "total_deceased")))
+  
+colnames(p.dat) <- c("group_code","ratio","cause", "n_censor_year", "OR", "OR_lower", "OR_upper", "pval", "index", "label", "total_deceased")
+p.dat <- p.dat[order(p.dat$index),]
+p.dat$label <- factor(p.dat$label, levels = unique(p.dat$label))
+p.dat$n_censor_year <- factor(p.dat$n_censor_year, levels = c("20", "10", "5", "0"))
+
+p.dat$colourcode = ifelse(p.dat$pval < 0.05, "Significant", "Insignificant")
+
+# Plot
+p <- ggplot(data=p.dat, aes(y=label))+
+  geom_point(aes(x = OR, group=n_censor_year), size = 0, alpha= 0, shape = 16, position = position_dodge2(width = 0.8)) +
+  geom_linerange(data = subset(p.dat, total_deceased >= 10), aes(xmin = OR_lower, xmax =OR_upper, color = n_censor_year, group=n_censor_year), linewidth = 1, alpha = 0.5, position = position_dodge2(width = 0.8)) +
+  geom_stripes(odd = "#22222222", even = "#00000000") +
+  geom_vline(xintercept=1,linetype="dashed",col='grey') +
+  geom_point(data = subset(p.dat, total_deceased >= 10), aes(x = OR, color = n_censor_year, group=n_censor_year), shape = 16, position = position_dodge2(width = 0.8)) +
+  xlab("Odds Ratio") +
+  ylab("") +
+  ggtitle(title) +
+  theme_bw() +
+  coord_cartesian(xlim = c(NA, 10))+
+    theme(
+      axis.line.y = element_blank(),
+      panel.grid.major.x = element_blank() ,
+      panel.grid.minor.x = element_blank() ,
+      panel.grid.major.y = element_blank(),
+      plot.title = element_text(size = 10),
+      axis.text.x = element_text(size = 10)
+    ) +
+  guides(color=guide_legend(title="Year(s)")) +
+  facet_wrap(~ratio, labeller = label_both)
+print(p)
+
+ggsave(paste0("./Figures/plot_OR_all_timewindow_", var_cause, ".png"), width = 10, height = 10)
+
+```
+
+\pagebreak 
+
+## Primary cancer, cancer mortality and secondary cancer incidence
+Figure. Heatmap showing the proportions of cancer mortality or secondary cancer incidence by group based on the primary cancer as reference. The total number for each group (denominator) is shown with the label, whereas the number of deaths or secondary cancer incidence (numerator) is shown on the tile.
+```{r, echo=FALSE}
+df_death <- read.csv("./DeathCause/univariate_results.csv")
+df_death <- merge(df_death, icd_dict, by.x = "reference", by.y ="coding_name")
+df_death <- merge(df_death, icd_dict[c("coding_name", "figure_name")], by.x = "group_code", by.y ="coding_name", suffixes = c("_y","_x"))
+df_death <- df_death %>%
+  mutate(total_death = covid0_deceased1 + covid1_deceased1,
+         proportion_death = total_death/n_total,
+        proportion_secondary = secondary_cancer/n_total,
+         y = paste0(figure_name_y," (n=", n_total, ")"),
+  )
+
+p <- ggplot(df_death, aes(x = figure_name_x, y = y, fill = proportion_death)) +
+  geom_tile(color = "white",
+            lwd = 0.5,
+            linetype = 1) +
+  geom_text(aes(label = total_death), color = "black", size = 2.5) +
+  scale_fill_gradient(low = "white", high = "skyblue") +
+  theme_bw() +
+  labs(subtitle="Proportions of cancer deaths by cancer groups",
+        x ="Cause of death", y = "",
+       fill="Proportion") +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)
+  )
+
+p1 <- ggplot(df_death, aes(x = figure_name_x, y = y, fill = proportion_secondary)) +
+  geom_tile(color = "white",
+            lwd = 0.5,
+            linetype = 1) +
+  geom_text(aes(label = secondary_cancer), color = "black", size = 2.5) +
+  scale_fill_gradient(low = "white", high = "skyblue") +
+  theme_bw() +
+  labs(subtitle="Proportions of secondary cancer incidence by cancer groups",
+        x ="Type of secondary cancer incidence", y = "",
+       fill="Proportion") +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)
+  )
+
+print(p)
+print(p1)
+```
+
+
+<!-- ## Association of cancer relapse with COVID-19 -->
+<!-- Figure.  -->
+<!-- 1. Plots with OR -->
+<!-- * Outcome: Metastasis post covid infection, variable: COVID-19 infection -->
+<!-- * Analysis was done on all cancer cases, by concatenating all cancer groups and removing any duplicated participants. -->
+<!-- ```{r, echo=FALSE, warning=FALSE} -->
+<!-- df_meta <- read.csv("./Metastasis/univariate_results.csv") -->
+
+<!-- fit <- paste0("fit", 3) -->
+<!-- title <- paste0("OR based on metastasis post COVID-19") -->
+<!-- col_selected <- paste0(paste0(fit, "."), c("estimate", "confint.lower", "confint.upper", "pval")) -->
+
+<!-- p.dat <- df_meta %>% dplyr::select(c(col_selected)) -->
+<!-- colnames(p.dat) <- c("OR", "OR_lower", "OR_upper", "pval") -->
+
+<!-- p <- ggplot(p.dat, aes(x = "metastasis", y = OR)) + -->
+<!--   geom_hline(yintercept=1,linetype="dashed",col='grey') + -->
+<!--   geom_linerange(aes(ymin = OR_lower, ymax =OR_upper), size = 1, alpha = 0.5, position = position_dodge2(width = 0.8)) + -->
+<!--   geom_point(aes(y = OR), shape = 15, position = position_dodge2(width = 0.8)) + -->
+<!--     xlab("") + -->
+<!--     ylab("Odds ratio") + -->
+<!--     ggtitle(title) + -->
+<!--     theme_bw() + -->
+<!--   coord_cartesian(ylim=c(0, NA)) -->
+
+<!-- print(p) -->
+
+<!-- kable(df_meta[,c(2:11)]) -->
+<!-- ``` -->
+
+# Limitations
+1. Number of cancer diagnosis during COVID-19 pandemic was lower.
+2. Couldn't analyse the association for secondary cancer incidence post-covid infection because we couldn't define a post-covid incidence without specifying a date in the control group.
+3. Uncertain how many of these COVID-19 as primary cause of death were related to cancer status; not much information was available in the secondary cause of death.
+4. Uncertain how many of these secondary incidence were related to the primary "baseline" cancer incidence, especially if they had different localizations. Were they actually unrelated incidences, or are they metastatic? Only a small number of metastatic cancer was observed in the study population (n < 10) as defined by ICD10.
+
+# Methods
+<!-- ## Data preparation -->
+<!-- COVID-19 data -->
+<!-- Death and cancer registry -->
+<!-- Definition of cancer incidence, we defined cancer individuals as those who had cancer incidence prior to COVID-19 pandemic ("1st Jan 2020"). For participants with more than one instances, the most recent date of diagnosis was used. -->
+
+<!-- For all participants, we also obtained information on their secondary cancer incidence during COVID-19 pandemic. -->
+
+## Matching
+* Matching specifications (`MatchIt` package). Matching was based on COVID-19 positivity as treatment variable. Using the average treatment effect in the treated as target estimand (`estimand` = "ATT"). Data was initially matched on date of cancer diagnosis using the "quick" method, and thereafter matched on other covariates such as age, ethnicity, BMI, smoking, alcohol, household income, education and employment using the "nearest" method, as well as "exact" matching on sex. This is to enable a flexible matching criterion on the covariates.
+* Matching was done on complete cases only, no imputation was conducted.
+* 1:1 matching was conducted separately according to cancer groups, such that for each COVID-19 positive participant there is also a COVID-19 negative participant that was matched according to the method above. The table below shows the number of participants in each cancer group based on COVID-19 and deceased status:
+
+## Statistical analysis
+* Model: Adjusted logistic regression
+* Note: for sex-specific cancers, covariate "sex" was removed from the formula.
+* Analyses based on censoring a number of years (0, 5, 10, 20) prior to the the COVID-19 pandemic, such that participants with date of cancer diagnosis during these periods were recoded.
+* Analysis on all cancer cases was done by concatenating all cancer groups and removing any duplicated participant.
+
+\pagebreak
+
+# Appendix
+## 1. ICD9/10 codes for cancer types
+Data were extracted from the Cancer Registry using the following ICD10 and ICD9 codes.
+```{r, echo=FALSE, out.height="80%", out.width="80%"}
+icd_dict <- read.delim("icd_dict.txt")
+kable(icd_dict %>% dplyr::select(c("Index", "Group", "ICD10", "ICD9")) %>%
+        filter(Index %in% 1:14))
+```
+
+\pagebreak
+
+## 2. Full demographics
+```{r, include=FALSE}
+# For any cancer case
+data <- readRDS("./Data/ukb_merged_data_processed.rds")
+covars <- subset(col_dict, Include == 1 & !(Type %in% c("Metabolic","Biochemistry","CancerRegistry", "DeathRegistry")))$CodingName
+covars <- covars[which(covars != "date_recr")]
+
+tableone <- CreateTableOne(vars = covars, strata = c("result", "case_any_cancer"), data = data)
+table <- print(tableone)[,1:4]
+
+matched_data_cancer <- readRDS("./Matching/data1_any_cancer_matched.rds")
+matched_data_control <- readRDS("./Control/data_control_matched.rds")
+matched_data <- rbind(matched_data_cancer[c("result", "deceased", covars)], matched_data_control[c("result", "deceased", covars)])
+matched_data$case_any_cancer <- as.factor(c(rep(1,nrow(matched_data_cancer)), rep(0,nrow(matched_data_control))))
+tableone <- CreateTableOne(vars = covars, strata = c("result", "case_any_cancer"), data = matched_data)
+
+table <- cbind(table, print(tableone)[,1:4])
+colnames(table) <- c("Full: no cancer, COVID -ve", "Full: no cancer, COVID +ve", "Full: cancer, COVID -ve", "Full: cancer, COVID +ve",
+                     "Matched: no cancer, COVID -ve", "Matched: no cancer, COVID +ve", "Matched: cancer, COVID -ve", "Matched: cancer, COVID +ve")
+```
+
+```{r, echo=FALSE, out.height="80%", out.width="80%"}
+kable(table)
+```
+
+## 3. Assessing balances in matching
+* Assessing covariate balance, visualizing distance before and after 1:1 matching.
+* Click to zoom-in each figure.
+
+```{r, include=FALSE}
+library(PairedData)
+```
+
+```{r, echo=FALSE, warning=FALSE, out.width = "50%", echo=FALSE}
+for (i in 1:14) {
+
+  group_code <- icd_dict$coding_name[i]
+  figure_name <- icd_dict$figure_name[i]
+  group_code_date_baseline <- paste0("date_diagnosis_baseline_", group_code)
+
+  title_theme <- ggdraw() +
+    draw_label(paste0("Covariate balance (", figure_name, ")"),
+               x = 0.05, hjust = 0)
+
+  m.out <- readRDS(paste0("./Matching/data1_", group_code, "_ratio1_matched_mdat.rds"))
+  m.out$X[,1] <- NULL
+  p2 <- love.plot(m.out, binary = "std", title = "")
+
+  matched_data <- match.data(m.out)
+  matched_data <- matched_data[order(matched_data$subclass),]
+  matched_data$group <- c(1,2)
+
+  group1 <- subset(matched_data,  group == 1, "date_diagnosis_latest_precovid",
+                 drop = TRUE)
+  group2 <- subset(matched_data,  group == 2, "date_diagnosis_latest_precovid",
+                 drop = TRUE)
+
+  # Plot paired data
+  pd <- paired(group1, group2)
+  p1 <- plot(pd, type = "profile") + theme_bw() + ggtitle("Date of diagnosis")
+
+  gridded <- plot_grid(p1, p2, rel_widths = c(1,2))
+  print(plot_grid(title_theme, gridded, ncol = 1, rel_heights = c(0.1,1)))
+
+  ggsave(paste0("./Figures/smd_balanced_", group_code, ".png"))
+}
+```
