@@ -1,15 +1,16 @@
 #PBS -l walltime=2:00:00
-#PBS -l select=1:ncpus=1:mem=50gb
+#PBS -l select=1:ncpus=8:mem=100gb
 #PBS -N definition
+#PBS -J 3-4
 
 cd /rds/general/user/fg520/home/CHD/outcome_definition/Scripts
 
 module load anaconda3/personal
 source activate phd_r
 
-def_path=/rds/general/user/fg520/home/CHD/outcome_definition/Definitions/CHD/
+def_path=/rds/general/user/fg520/home/CHD/outcome_definition/Definitions/out${PBS_ARRAY_INDEX}*/
 
-out_path=/rds/general/user/fg520/home/CHD/outcome_definition/Outputs/CHD/
+out_path=/rds/general/user/fg520/home/CHD/outcome_definition/Outputs/out${PBS_ARRAY_INDEX}/
 
 app_data_path=/rds/general/project/chadeau_ukbb_folder/live/data/project_data/UKB_677583/ukb677583.csv
 

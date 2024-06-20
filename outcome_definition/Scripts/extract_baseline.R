@@ -1,7 +1,10 @@
 # Objective: define prevalent cases based on additional information reported at baseline.
+# setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
 library(data.table)
 library(testthat)
 library(dplyr)
+library(vroom)
 source("functions.R")
 
 # Reading arguments
@@ -10,11 +13,9 @@ def_path <- as.character(args[1])
 app_data_path <- as.character(args[2])
 out_path <- as.character(args[3])
 
-def_path="/rds/general/user/fg520/home/CHD/outcome_definition/Definitions/CHD/"
-  
-out_path="/rds/general/user/fg520/home/CHD/outcome_definition/Outputs/CHD/"
-  
-app_data_path="/rds/general/project/chadeau_ukbb_folder/live/data/project_data/UKB_677583/ukb677583.csv"
+# def_path="/rds/general/user/fg520/home/CHD/outcome_definition/Definitions/out1_ASCVD/"
+# out_path="/rds/general/user/fg520/home/CHD/outcome_definition/Outputs/out1/"
+# app_data_path="/rds/general/project/chadeau_ukbb_folder/live/data/project_data/UKB_677583/ukb677583.csv"
 
 # Loading registries-based definitions
 mydata <- readRDS(paste0(out_path, "output_registries.rds"))
@@ -61,11 +62,14 @@ if (length(mylist_codes) > 0) {
   for (i in 1:length(field_ids)) {
     field_column_ids <- c(field_column_ids, grep(field_columns[i], column_names))
   }
-  ukb <- fread(app_data_path,sep=",", header =T,data.table = FALSE, select = field_column_ids, tmpdir = "~/../ephemeral/")
-  # Sys.setenv(VROOM_CONNECTION_SIZE=500072)
-  # ukb <- vroom::vroom(app_data_path, delim = ",")
-  # ukb <- ukb %>%
-  #   select(all_of(field_column_ids))
+  
+  # ukb <- fread(app_data_path,sep=",", header =T, data.table = FALSE, select = field_column_ids, tmpdir = "~/../ephemeral/", fill = T)
+  # ukb <- fread(app_data_path,sep=",", header =T, data.table = FALSE, select = 1, tmpdir = "~/../ephemeral/", fill = T, nrows = 400000)
+  
+  # ukb <- vroom(app_data_path, delim=",", col_select = 1, show_col_types = F)
+  ukb <- vroom(app_data_path, delim=",", col_select = all_of(field_column_ids), show_col_types = F)
+  # ukb_more <- vroom(app_data_path, delim=",", col_select = field_column_ids)
+  ukb <- as.data.frame(ukb)
   
   rownames(ukb) <- ukb$eid
   ukb <- ukb[, -which(colnames(ukb) == "eid")]
