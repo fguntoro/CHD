@@ -21,9 +21,9 @@ library(stringi)
 # Create relevant directory
 ifelse(dir.exists("../Data/"), FALSE, dir.create("../Data/"))
 
-data_path = "~/CHD/extraction_and_recoding/outputs/ukb_recoded.rds"
-withdraw_path = "/rds/general/project/chadeau_ukbb_folder/live/data/project_data/UKB_673609/withdraw69328_136_20231013.txt"
-covar_dict_path = "~/CHD/column_dictionary.csv"
+# data_path = "~/CHD/extraction_and_recoding/outputs/ukb_recoded.rds"
+# withdraw_path = "/rds/general/project/chadeau_ukbb_folder/live/data/project_data/UKB_673609/withdraw69328_136_20231013.txt"
+# covar_dict_path = "~/CHD/column_dictionary.csv"
 
 clean_data <- function(data_path, withdraw_path, covar_dict_path) {
   
@@ -55,12 +55,13 @@ clean_data <- function(data_path, withdraw_path, covar_dict_path) {
   # colnames(data) <- name_figure
   
   # add townsend index from prior basket
-  tmp <- readRDS("~/covid19_metabolomics/Scripts/extraction_and_recoding/outputs/ukb_extracted.rds")
-  tmp$townsend_ind <- tmp$townsend_ind.0.0
+  # tmp <- readRDS("~/covid19_metabolomics/Scripts/extraction_and_recoding/outputs/ukb_extracted.rds")
+  # tmp$townsend_ind <- tmp$townsend_ind.0.0
+  # ukb <- merge(ukb, tmp[c("townsend_ind")], by = "row.names")
+  # colnames(ukb)[1] <- "eid"
+  # rm(tmp)
   
-  ukb <- merge(ukb, tmp[c("townsend_ind")], by = "row.names")
-  colnames(ukb)[1] <- "eid"
-  
+  ukb$eid <- rownames(ukb)
   ukb <- ukb %>%
     dplyr::select(any_of(c("eid", name)))
   
@@ -68,7 +69,6 @@ clean_data <- function(data_path, withdraw_path, covar_dict_path) {
     print(paste0("Variables not found: ", name[!name %in% colnames(ukb)]))
   }
   
-  rm(tmp)
   
   ###########################################################################
   #                                                                         #
@@ -91,24 +91,24 @@ clean_data <- function(data_path, withdraw_path, covar_dict_path) {
   table(data$ethnicity, useNA = "ifany")
   
   # Household income
-  table(data$household_income, useNA = "ifany")
-  data$household_income_detailed <- data$household_income
-  data$household_income <- ifelse(data$household_income %in% c("Less than 18,000"), "LowerIncome",
-                                  ifelse(data$household_income %in% c("18,000 to 30,999", "31,000 to 51,999"), "MiddleIncome",
-                                         ifelse(data$household_income %in% c("18,000 to 30,999", "31,000 to 51,999", "52,000 to 100,000", "Greater than 100,000"), "HigherIncome",
-                                                NA)))
-  data$household_income <- relevel(as.factor(data$household_income), "LowerIncome")
-  table(data$household_income, useNA = "ifany")
+  # table(data$household_income, useNA = "ifany")
+  # data$household_income_detailed <- data$household_income
+  # data$household_income <- ifelse(data$household_income %in% c("Less than 18,000"), "LowerIncome",
+  #                                 ifelse(data$household_income %in% c("18,000 to 30,999", "31,000 to 51,999"), "MiddleIncome",
+  #                                        ifelse(data$household_income %in% c("18,000 to 30,999", "31,000 to 51,999", "52,000 to 100,000", "Greater than 100,000"), "HigherIncome",
+  #                                               NA)))
+  # data$household_income <- relevel(as.factor(data$household_income), "LowerIncome")
+  # table(data$household_income, useNA = "ifany")
   
   # Education
-  table(data$education_status, useNA = "ifany")
-  data$education_status_detailed <- data$education_status
-  data$education_status <- ifelse(data$education_status %in% c("College or University degree"), "University",
-                                  ifelse(data$education_status %in% c("A levels/AS levels or equivalent"), "ALevel",
-                                         ifelse(data$education_status %in% c("O levels/GCSEs or equivalent", "CSEs or equivalent"), "OLevel",
-                                                ifelse(data$education_status %in% c("Prefer not to answer", "None of the above", NA), NA, "Other"))))
-  data$education_status <- relevel(as.factor(data$education_status), "University")
-  table(data$education_status, useNA = "ifany")
+  # table(data$education_status, useNA = "ifany")
+  # data$education_status_detailed <- data$education_status
+  # data$education_status <- ifelse(data$education_status %in% c("College or University degree"), "University",
+  #                                 ifelse(data$education_status %in% c("A levels/AS levels or equivalent"), "ALevel",
+  #                                        ifelse(data$education_status %in% c("O levels/GCSEs or equivalent", "CSEs or equivalent"), "OLevel",
+  #                                               ifelse(data$education_status %in% c("Prefer not to answer", "None of the above", NA), NA, "Other"))))
+  # data$education_status <- relevel(as.factor(data$education_status), "University")
+  # table(data$education_status, useNA = "ifany")
   
   # Employment
   # table(data$employment_status, useNA = "ifany")
@@ -168,13 +168,14 @@ clean_data <- function(data_path, withdraw_path, covar_dict_path) {
   # Waist-hip ratio
   data <- data %>%
     mutate(waist_hip_ratio = waist_circ / hip_circ)
+  data$waist_circ <- data$hip_circ <- NULL
   
   
   # Index of Multiple Deprivation (IMD)
   data <- data %>%
-    mutate(imd_england = ntile(imd_england, 5),
-           imd_scotland = ntile(imd_scotland, 5),
-           imd_wales = ntile(imd_wales, 5),
+    mutate(imd_england = ntile(imd_england, 10),
+           imd_scotland = ntile(imd_scotland, 10),
+           imd_wales = ntile(imd_wales, 10),
            imd = as.factor(if_else(!is.na(imd_england), imd_england,
                          if_else(!is.na(imd_scotland), imd_scotland,
                                  if_else(!is.na(imd_wales), imd_wales, NA)))))
@@ -183,6 +184,24 @@ clean_data <- function(data_path, withdraw_path, covar_dict_path) {
   # Dealing with dates
   data$date_recr <- as.Date(data$date_recr)
   data$date_of_death <- as.Date(data$date_of_death)
+  
+  # Rename age
+  data$age <- data$age_recr_continuous
+  data$age_recr_continuous <- NULL
+  
+  return(data)
+}
+
+one_hot_encode <- function(data, covars) {
+  data <- data[,c("eid", covars)]
+  data$eid <- as.numeric(data$eid)
+  data <- as.data.frame(model.matrix(~., model.frame(~ ., data, na.action=na.pass),
+                                    contrasts.arg = lapply(data[,sapply(data, is.factor)], contrasts, contrasts=FALSE)))
+  col_keep_idx <- vapply(data, function(x) length(unique(x)) > 1, logical(1L))
+  col_remove_name <- colnames(data)[-col_keep_idx]
+  print(paste0("Columns removed (all same values): ", col_remove_name))
+  
+  data <- data[,col_keep_idx]
   
   return(data)
 }

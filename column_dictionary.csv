@@ -8,12 +8,12 @@ FieldID,CodingName,FigureName,Type,Label,Include
 94,bp_dias,bp_dias,Biological,Diastolic BP,1
 4079,bp_diastolic_auto,bp_diastolic_auto,Biological,Systolic BP (auto),1
 4080,bp_systolic_auto,bp_systolic_auto,Biological,Diastolic BP (auto),1
-189,townsend_ind,townsend_ind,Demographic,Townsend index,1
+189,townsend_ind,townsend_ind,Demographic,Townsend index,0
 670,accom,accom,Demographic,Accommodation,0
 680,home_status,home_status,Demographic,Home ownership,0
 709,household_people,household_people,Demographic,Household people,0
-738,household_income,household_income,Demographic,Household income,1
-6138,education_status,education_status,Demographic,Education status,1
+738,household_income,household_income,Demographic,Household income,0
+6138,education_status,education_status,Demographic,Education status,0
 6142,employment_status,employment_status,Demographic,Employment status,0
 20116,smoking_status,smoking_status,Lifestyle,Smoking status,1
 20117,alcohol_status,alcohol_status,Lifestyle,Alcohol status,0
@@ -277,18 +277,18 @@ FieldID,CodingName,FigureName,Type,Label,Include
 30600,albumin,albumin,Biochemistry,Albumin,0
 30610,alkaline_phosphatase,alkaline_phosphatase,Biochemistry,Alkaline phosphatase,0
 30620,alanine_aminotransferase,alanine_aminotransferase,Biochemistry,Alanine aminotransferase,0
-30630,apolipoprotein_a,apolipoprotein_a,Biochemistry,Apolipoprotein A,1
-30640,apolipoprotein_b,apolipoprotein_b,Biochemistry,Apolipoprotein B,1
+30630,apolipoprotein_a,apolipoprotein_a,Biochemistry,Apolipoprotein A,0
+30640,apolipoprotein_b,apolipoprotein_b,Biochemistry,Apolipoprotein B,0
 30650,aspartate_aminotransferase,aspartate_aminotransferase,Biochemistry,Aspartate aminotransferase,0
 30660,direct_bilirubin,direct_bilirubin,Biochemistry,Direct bilirubin,0
-30670,urea,urea,Biochemistry,Urea,1
+30670,urea,urea,Biochemistry,Urea,0
 30680,calcium,calcium,Biochemistry,Calcium,0
 30690,cholesterol,cholesterol,Biochemistry,Cholesterol,0
-30700,creatinine,creatinine,Biochemistry,Creatinine,1
-30710,c_reactive_protein,c_reactive_protein,Biochemistry,C reactive protein,1
+30700,creatinine,creatinine,Biochemistry,Creatinine,0
+30710,c_reactive_protein,c_reactive_protein,Biochemistry,C reactive protein,0
 30720,cystatin_c,cystatin_c,Biochemistry,Cystatin c,0
 30730,gamma_glutamyltransferase,gamma_glutamyltransferase,Biochemistry,Gamma glutamyltransferase,0
-30740,glucose,glucose,Biochemistry,Glucose,1
+30740,glucose,glucose,Biochemistry,Glucose,0
 30750,hba1c,glycated_haemoglobin_hbA1c,Biochemistry,Glycated haemoglobin (HbA1c),1
 30760,hdl_cholesterol,hdl_cholesterol,Biochemistry,HDL cholesterol,1
 30770,igf1,igf1,Biochemistry,IGF 1,0
@@ -322,3 +322,5 @@ FieldID,CodingName,FigureName,Type,Label,Include
 26410,imd_england,imd_england,Demographic,IMD England,1
 26426,imd_wales,imd_wales,Demographic,IMD Wales,1
 26427,imd_scotland,imd_scotland,Demographic,IMD Scotland,1
+6153,medication_f,medication_f,Medication,Medication (F),0
+6177,medication_m,medication_m,Medication,Medication (M),0

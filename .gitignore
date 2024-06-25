@@ -2,3 +2,7 @@
 *.rds
 *.e*
 *.o*
+/Results
+draft.pdf
+draft.Rmd
+/Data
